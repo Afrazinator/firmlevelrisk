@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup, FeatureNotFound
 import os
 import re
 import pandas as pd
-
+import fitz
 # Note: need to install html5lib parser
 
 
@@ -46,24 +46,42 @@ def import_politicalbigrams(file):
     return df.to_dict(orient='index')
 
 
+def load_pdf(folder):
+    """
+    We send in the directory to the pdf
+    it takes the first PDF only
+    Sends out the text of the PDF
+    """
+    files = [x for x in os.listdir(folder) if '.pdf' in x]
+    print(len(files))
+    # Load the PDF
+    with fitz.open(folder + str(files[0])) as doc:
+        text = ""
+        for page in doc:
+            text += page.getText()
+    title = str(files[0]).strip('pdf')
+    results = {}
+    results[title] = {'text': text}
+    return results
+
 
 def load_transcripts(folder):
-    
+
     # ATTENTION: Assumes html file was downloaded from The Motley Fool
-    
+
     # Collect files in list
     files = [x for x in os.listdir(folder) if '.html' in x]
-    
+
     # Collect results here
     results = {}
-    
+
     # Loop through all files
     for file in files:
-        
+
         # Load HTML
         with open(folder + file, 'r', encoding='utf-8') as infile:
             webpage = infile.read()
-            
+
         # Parse
         try:
             soup = BeautifulSoup(webpage, 'html5lib')
@@ -73,7 +91,7 @@ def load_transcripts(folder):
         # Narrow down to relevant content
         content = soup.select('[class~=article-content]')[0]
         title = clean_title(soup.title.get_text())
-        
+
         # Extract text
         text = []
         for part in content.find_all('p'):
@@ -85,68 +103,66 @@ def load_transcripts(folder):
                 time = part.find(id='time').get_text()
                 ticker = part.find(class_='ticker').get_text()
                 continue
-            
+
             # Skip links
             links = part.find_all(href=True)
             if links:
                 continue
-            
+
             # Skip Motley Fool
             if re.search(r'The Motley Fool.$', part.get_text()):
                 continue
-            
+
             # Text
             text.append(part.get_text())
-        
+
         # Collect
         results[title] = {'text':' '.join(text),
                           'date':date,
                           'time':time,
                           'ticker':ticker}
-                
+
     return results
 
 
 
 def clean_title(string):
-    
+
     # Remove leading and trailing white space
     string = re.sub(r'^\s+','', string)
     string = re.sub(r'\s+$', '', string)
-    
+
     # Remove The Motley Fool
     string = re.sub(r' \| [\s\S]+$', '', string)
-    
+
     return string
 
 
 
 def preprocess(nested_dict, window_size=20):
-    
+
     # Make copy into which window of 22 words is pasted
     result = nested_dict.copy()
 
     # Loop
     for title, content in nested_dict.items():
-        
+
         # Access raw text
         text_str = content['text']
-        
+
         # Preprocess
         text_str = re.sub(r'[^a-zA-Z ]', '', text_str.lower())
         words = text_str.split()
-        
+
         # TODO: Remove name of analysts
-        
+
         # Bigrams
         bigrams = [' '.join(x) for x in zip(words[0:], words[1:])]
-        
+
         # Window of +/- 10 consecutive bigrams
         window = list(zip(*[bigrams[i:] for i in range(window_size+1)]))
-        
+
         result[title]['bigram_windows'] = window
         result[title]['cleaned'] = words
-        
+
     return result
-
-

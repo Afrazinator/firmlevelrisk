@@ -7,7 +7,7 @@ Created on Sun Aug 23 21:12:55 2020
 """
 
 # Change me
-homedir = '/Users/markusschwedeler/Projects/firmlevelrisk/'
+homedir = 'E:/RA/Isha/firmlevelrisk'
 
 # Modules
 import os
@@ -39,18 +39,23 @@ allwords = dict(sentiment_words, **{'risk':risk_words})
 # Import political bigrams
 political_bigrams = h.import_politicalbigrams(polbigrams_file)
 
-# SarsCov2-related words
-sarscov2 = ['Coronavirus', 'Corona virus', 'coronavirus',
-            'Covid-19', 'COVID-19', 'Covid19', 'COVID19',
-            'SARS-CoV-2', '2019-nCoV']
-sarscov2_words = set([re.sub('[^a-z ]', '', x.lower()) for x in sarscov2])
+"""
+Change this
+"""
+# Bank-related words
+bank_keywords = ['foreign', 'foreign exchange', 'currency','foreign currency',
+'exchange rate','currency risk','currency exposure']
+bank_words = set([re.sub('[^a-z ]', '', x.lower()) for x in bank_keywords])
 
 
 #---------------------------------------------#
 # 2) Load and clean earnings call transcripts #
 #---------------------------------------------#
 # Parse text and metadata from HTML
-transcripts_raw = h.load_transcripts(earningscall_dir)
+#transcripts_raw = h.load_transcripts(earningscall_dir)
+
+# Load the data from a pdf
+transcripts_raw = h.load_pdf(earningscall_dir)
 
 # Preprocess text and return window of 22 consecutive bigrams
 preprocessed = h.preprocess(transcripts_raw)
@@ -64,68 +69,68 @@ preprocessed = h.preprocess(transcripts_raw)
 # Loop through transcripts
 scores = {}
 for title, content in preprocessed.items():
-    
+
     print('Working on:', title)
     scores[title] = {}
-    
+
     # Access preprocessed windows of consecutive bigrams
     windows = content['bigram_windows']
     words = content['cleaned']
-    
+
     # Total number of words (to normalize scores)
     totalwords = len(words)
-    
+
     ### A) Score unconditional scores
     risk = len([word for word in words if word in allwords['risk']])
     sentpos = len([word for word in words if word in allwords['positive']])
     sentneg = len([word for word in words if word in allwords['negative']])
-    covid = len([word for word in words if word in sarscov2_words])
-    
+    bank = len([word for word in words if word in bank_words])
+
     # Collect and prepare for conditional scores
     scores[title] = {
         'Risk':risk,
         'Sentiment':sentpos-sentneg,
-        'Covid':covid,
+        'Bank':bank,
         'Pol':0,
         'PRisk':0,
         'PSentiment':0,
         'Total words':totalwords
         }
-    
+
     ### B) Score conditional scores
     # Loop through each windows
     for window in windows:
-    
+
         # Find middle ngram and check whether a "political" bigram
         middle_bigram = window[10]
         if middle_bigram not in political_bigrams:
             continue
         tfidf = political_bigrams[middle_bigram]['tfidf']
-        
+
         # Create word list for easy and quick access
         window_words = set([y for x in window for y in x.split()])
-        
+
         # If yes, check whether risk synonym in window
         conditional_risk = (len([word for word in window_words
                             if word in allwords['risk']]) > 0)
-        
+
         # If yes, check whether positive or negative sentiment
         conditional_sentpos = len([word for word in window_words
                                    if word in allwords['positive']])
         conditional_sentneg = len([word for word in window_words
                                    if word in allwords['negative']])
-        
+
         # Weigh by tfidf
         conditional_risk = conditional_risk * tfidf
         conditional_sentpos = conditional_sentpos * tfidf
         conditional_sentneg = conditional_sentneg * tfidf
-        
+
         # Collect results
         scores[title]['Pol'] += tfidf
         scores[title]['PRisk'] += conditional_risk
         scores[title]['PSentiment'] += (conditional_sentpos-
                                                  conditional_sentneg)
-        
+
 
 # Collect in dataframe
 scores_df = pd.DataFrame().from_dict(scores, orient='index')
